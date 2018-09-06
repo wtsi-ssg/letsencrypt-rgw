@@ -1,0 +1,42 @@
+* LetsEncrypt the Ceph RADOS gateway
+
+This is an Ansible role for enabling LetsEncrypt-based TLS for the
+Ceph RADOS gateway. It accompanies a blog entry describing what we
+did.
+
+This is an slightly edited version of the role we use at Sanger as
+part of our [[https://github.com/ceph/ceph-ansible][ceph-ansible]]
+based deployment; the version here has been developed with
+ceph-ansible version 3.0, but is probably more widely useful.
+
+The hook script (~infobloxhook.sh.j2~), as its name suggests, expects
+to use an Infoblox device to update the DNS. If you have a different
+DNS solution, you'll need to replace the ~deploy_challenge~ and
+~clean_challenge~ handlers.
+
+This is not intended to be a drop-in solution, but it should at least
+be a useful framework.
+
+** Variables
+
+In common with ceph-ansible, this role expects you to have a ~rgws~
+group defined, containing the hostnames of your rgws. You also need to
+define ~radosgw_dns_name~ which is the base hostname of your S3
+service, and the secret ~radosgw_infoblox_cred~ which is the Infoblox
+credential to use; that needs to be able to create the relevant
+_acme-challenge TXT records. If using Infoblox, define
+~infoblox_hostname~ as well.
+
+If you want to use the ~cron_wrapper.sh~ script, you'll need to set
+~proxy_hostname~; alternatively if you don't need an HTTP proxy, then
+just remove the relevant stanza from the script and install it with
+~copy~ rather than ~template~.
+
+The first member of the ~rgws~ group will be the host that talks to
+LetsEncrypt.
+
+** Things you'll need to change
+
+Other than the Infoblox-specific parts of the hook script, and the
+HTTP proxy issues noted above, you will also want to review the
+dehydrated_config file (at the very least, to set CONTACT_EMAIL).

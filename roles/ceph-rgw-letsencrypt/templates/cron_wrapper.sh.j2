@@ -1,0 +1,27 @@
+#!/bin/bash
+#{{ ansible_managed }}
+#Wrapper round dehydrated, to be called from cron. Has 2 purposes:
+#1) sets https_proxy to work round NAT issues.
+#2) silent unless something goes wrong, otherwise emit output
+
+unset https_proxy
+for h in $( adnshost +Do +Dt {{ proxy_hostname }} | sed -e 's/INET //' ); do
+    if ping -c 1 -w 5 "$h" >/dev/null ; then
+	export https_proxy="http://${h}:3128"
+	break
+    fi
+done
+if [ -z "$https_proxy" ] ; then
+    echo "Unable to find a responsive https proxy, giving up"
+    exit 1
+fi
+
+tmp=$(mktemp)
+trap "rm -f $tmp" EXIT
+/usr/local/bin/dehydrated -c >"$tmp" 2>&1
+x=$?
+if [ $x -ne 0 ] ; then
+    cat "$tmp"
+    echo "Final exit status: $x"
+    exit $x
+fi

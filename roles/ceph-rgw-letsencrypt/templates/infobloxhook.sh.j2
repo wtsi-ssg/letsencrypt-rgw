@@ -1,0 +1,84 @@
+#!/bin/bash -e
+#{{ ansible_managed }}
+set -E #ERR trap inherited by functions
+
+INFOBLOXCRED="{{radosgw_infoblox_cred}}"
+
+hn=$(hostname -s)
+
+op="$1"
+domname="$2"
+ignore="$3" #this arg not used for dns challenge type
+token="$4"
+
+tmppth=$(mktemp)
+trap "rm -rf $tmppth" ERR
+trap "rm -rf $tmppth" EXIT
+
+poke_api()
+{
+curl -sS -k1 -u "$INFOBLOXCRED" -H "Content-type: application/json" -XPOST https://{{ infoblox_hostname }}/wapi/v2.3.1/request -d @- <"$tmppth" >/dev/null
+}
+
+case "$1" in
+    "deploy_challenge")
+	cat >"$tmppth" <<EOF
+{
+ "method": "POST",
+ "object": "record:txt",
+ "data": {
+   "name": "_acme-challenge.${domname}",
+   "text": "$token",
+   "view": "external"
+ }
+}
+EOF
+	poke_api
+	sleep 5
+        ;;
+    "clean_challenge")
+	cat >"$tmppth" <<EOF
+[
+    {
+        "method": "GET",
+        "object": "record:txt",
+        "data": {
+            "name": "_acme-challenge.${domname}",
+            "text": "$token"
+        },
+        "assign_state": {
+            "text_ref": "_ref"
+        }
+    },
+    {
+        "method": "DELETE",
+        "object": "##STATE:text_ref:##",
+        "enable_substitution": true
+    }
+]
+EOF
+	poke_api
+        ;;
+    "deploy_cert")
+	# has different args, so re-name vars as appropriate
+	priv="$ignore"
+	cert="$token"
+	fullchain="$5" #cert + chain concatenated
+	chain="$6"
+	rados -n "client.rgw.$hn" -p rgwtls put privkey.pem "$priv"
+	rados -n "client.rgw.$hn" -p rgwtls put cert.pem "$cert"
+	rados -n "client.rgw.$hn" -p rgwtls put chain.pem "$chain"
+        ;;
+    "invalid_challenge")
+        # do nothing for now
+        ;;
+    "request_failure")
+        # do nothing for now
+        ;;
+    "startup_hook")
+        # do nothing for now (this is for cron mode)
+        ;;
+    "exit_hook")
+        # do nothing for now (this is for cron mode)
+        ;;
+esac

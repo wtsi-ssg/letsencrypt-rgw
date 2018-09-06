@@ -1,0 +1,72 @@
+#!/bin/bash -e
+# {{ ansible_managed }}
+
+# Copyright (C) 2018 Genome Research Limited
+# 
+# Author: Matthew Vernon <mv3@sanger.ac.uk>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#base hostname of our rgw
+s3name="{{radosgw_dns_name}}"
+hn=$(hostname -s)
+
+#make a working directory, delete it when we exit
+workdir=$(mktemp -d)
+cd "$workdir"
+trap "rm -rf $workdir" EXIT
+
+#retrieve key and cert, check they match
+rados -n "client.rgw.$hn" -p rgwtls get privkey.pem privkey.pem
+keymod=$( openssl rsa -in privkey.pem -noout -modulus )
+rados -n "client.rgw.$hn" -p rgwtls get cert.pem cert.pem
+certmod=$( openssl x509 -in cert.pem -noout -modulus )
+if [ "$keymod" != "$certmod" ]; then
+    echo "key and cert moduli do not match! Not deploying"
+    exit 1
+fi
+
+#use , as command separator rather than / to save on writing \/ a lot
+#check cert is for the right hostname
+certname=$( openssl x509 -in cert.pem -noout -subject | sed -ne 's,^.*/CN=\(.*\)$,\1,p' )
+if [ "$certname" != "$s3name" ]; then
+    echo "cert hostname $certname does not match expected value $s3name"
+    echo "Not deploying."
+    exit 1
+fi
+
+#check issuer of cert and subject of chain match (i.e. that it's the
+#correct chain)
+rados -n "client.rgw.$hn" -p rgwtls get chain.pem chain.pem
+certissuer=$( openssl x509 -in cert.pem -noout -issuer | sed -e 's,^.*/CN=,,' )
+chainsubj=$( openssl x509 -in chain.pem -noout -subject | sed -e 's,^.*/CN=,,' )
+if [ "$certissuer" != "$chainsubj" ]; then
+    echo "cert issuer $certissuer does not match chain subject $chainsubj"
+    echo "Not deploying."
+    exit 1
+fi
+
+#now build the full chain - civetweb wants the private key, cert, and
+#any intermediate certificate chain all in the same .pem file
+cat privkey.pem cert.pem chain.pem >rgwtls.pem
+
+#If cert has changed, install new version & restart
+#reload just rotates log files :(
+if ! cmp -s rgwtls.pem /etc/ceph/rgwtls.pem ; then
+    chown ceph rgwtls.pem
+    chmod 0600 rgwtls.pem
+    mv rgwtls.pem /etc/ceph/rgwtls.pem
+    #with luminous, can instead use ssl_short_trust=yes
+    systemctl restart ceph-radosgw@rgw.$(hostname -s)
+fi

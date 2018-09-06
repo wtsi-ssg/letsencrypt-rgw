@@ -1,0 +1,17 @@
+galaxy_info:
+  role_name: ceph-rgw-letsencrypt
+  author: Matthew Vernon <mv3@sanger.ac.uk>
+  company: Wellcome Sanger Institute
+  license: GPLv3
+  description: Set up LetsEncrypt for HTTPS for the Ceph RADOS gateway
+  min_ansible_version: 2.2
+  platforms:
+    - name: Ubuntu
+      versions:
+        - xenial
+  galaxy_tags:
+    - ceph
+    - letsencrypt
+    - s3
+    - system
+dependencies: []

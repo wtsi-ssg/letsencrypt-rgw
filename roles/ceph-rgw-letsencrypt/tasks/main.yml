@@ -1,0 +1,118 @@
+---
+# ceph-rgw-letsencrypt: Ansible playbook to set up letsencrypt (ACME
+# DNS-based challenge) for the Ceph RADOS gateway
+
+ - name: install packages needed for letsencrypt
+   apt: update_cache=yes
+        state=latest
+        name={{item}}
+   with_items:
+     - curl
+     - adns-tools
+   tags:
+     - letsencrypt
+
+#In 18.04 dehydrated is available from the distro
+ - name: Install dehydrated 0.6.1
+   copy:
+     src: dehydrated
+     dest: /usr/local/bin/
+     mode: 0755
+   delegate_to: "{{ groups.rgws[0] }}"
+   run_once: true
+   tags:
+     - letsencrypt
+
+ - name: make directories for dehydrated conf and lib
+   file:
+     path: "{{ item }}"
+     state: directory
+   with_items:
+     - /etc/dehydrated
+     - /usr/local/lib/dehydrated
+   tags:
+     - letsencrypt
+
+ - name: install dehydrated configuration file
+   copy:
+     src: dehydrated_config
+     dest: /etc/dehydrated/config
+   delegate_to: "{{ groups.rgws[0] }}"
+   run_once: true
+   tags:
+     - letsencrypt
+
+ - name: template dehydrated domains specification
+   template:
+     src: domains.j2
+     dest: /etc/dehydrated/domains.txt
+   delegate_to: "{{ groups.rgws[0] }}"
+   run_once: true
+   tags:
+     - letsencrypt
+
+ - name: template Infoblox hook script (to include credential)
+   template:
+     src: infobloxhook.sh.j2
+     dest: /usr/local/lib/dehydrated/infobloxhook.sh
+     mode: 0700
+   delegate_to: "{{ groups.rgws[0] }}"
+   run_once: true
+   tags:
+     - letsencrypt
+
+ - name: Check if accounts dir exists
+   stat:
+     path: /etc/dehydrated/accounts
+   register: acdir
+   delegate_to: "{{ groups.rgws[0] }}"
+   run_once: true
+   tags:
+     - letsencrypt
+
+ - name: Register with letsencrypt if accounts dir not yet present
+   shell: /usr/local/bin/dehydrated --register --accept-terms
+   when: acdir.stat.exists==false
+   delegate_to: "{{ groups.rgws[0] }}"
+   run_once: true
+   tags:
+     - letsencrypt
+
+ - name: Template script to deploy new key/cert
+   template:
+     src: deploy_new_cert.sh.j2
+     dest: /usr/local/lib/dehydrated/deploy_new_cert.sh
+     mode: 0755
+   tags:
+     - letsencrypt
+
+#Sets up proxy variable, and silences unless something goes wrong
+ - name: Install wrapper script round dehydrated
+   template:
+     src: cron_wrapper.sh.j2
+     dest: /usr/local/lib/dehydrated/cron_wrapper.sh
+     mode: 0755
+   delegate_to: "{{ groups.rgws[0] }}"
+   run_once: true
+   tags:
+     - letsencrypt
+
+ - name: Run dehydrated from cron
+   cron:
+     hour: 1
+     minute: 1
+     name: Wrapper round dehydrated
+     job: "/usr/local/lib/dehydrated/cron_wrapper.sh"
+   delegate_to: "{{ groups.rgws[0] }}"
+   run_once: true
+   tags:
+     - letsencrypt
+
+ - name: Cron job to install new TLS key/cert
+   cron:
+     hour: 2
+     minute: 2
+     name: install new TLS key/cert
+     job: "/usr/local/lib/dehydrated/deploy_new_cert.sh"
+   tags:
+     - letsencrypt
