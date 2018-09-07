@@ -3,7 +3,7 @@
 # dehydrated by lukas2511
 # Source: https://dehydrated.de
 #
-# This script is licensed under The MIT License (see LICENSE for more information).
+# This script is licensed under The MIT License (see dehydrated-LICENSE for more information).
 
 set -e
 set -u
