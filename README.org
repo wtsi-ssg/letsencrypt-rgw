@@ -1,7 +1,7 @@
 * LetsEncrypt the Ceph RADOS gateway
 
 This is an Ansible role for enabling LetsEncrypt-based TLS for the
-Ceph RADOS gateway. It accompanies a blog entry describing what we
+Ceph RADOS gateway. It accompanies [[https://hpc-news.sanger.ac.uk/2018/09/20/lets-encrypt-the-rados-gateway/][a blog entry]] describing what we
 did.
 
 This is an slightly edited version of the role we use at Sanger as
